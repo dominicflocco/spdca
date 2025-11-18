@@ -1,0 +1,5 @@
+logs
+results
+bobilib
+*.pyc
+__pycache__/
