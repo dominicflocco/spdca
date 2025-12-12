@@ -11,7 +11,21 @@ def solve_exact(
         milp: bool=False,
         log_file: str=None
     ) -> dict[str, Any]:
+    """
+    Solve the exact, nonconvex formulation using a MILP solver.
 
+    Args:
+        spdca (SPDCALinearSolver): The SPDCA solver instance.
+        solver_name (str): Name of the MILP solver to use (default: 'gurobi_persistent').
+        milp (bool): Whether to solve as a MILP (default
+            False). If True, the model is solved as a MILP.
+        log_file (str): Path to the log file for solver output (default: None).
+    Returns:
+        dict[str, Any]: Dictionary containing the objective value, error, runtime,
+            solver status, and the solved model instance.
+    Raises:
+        ValueError: If the solver name is not recognized.
+    """
     
     optimizer = pyo.SolverFactory(solver_name)
     optimizer.options['NonConvex'] = 2
@@ -66,7 +80,18 @@ def solve_exact(
 
 
 def solve_relaxed(spdca: SPDCALinearSolver, solver_name: str='gurobi', obj_sense=pyo.minimize):
+    """Solve the relaxed formulation using a solver without complementarity constraints
 
+    Args:
+        spdca (SPDCALinearSolver): The SPDCA solver instance.
+        solver_name (str): Name of the solver to use (default: 'gurobi').
+        obj_sense (pyo.ObjectiveSense): Objective sense for the relaxed problem (default: pyo.minimize).
+    Returns:
+        dict[str, Any]: Dictionary containing the objective value, error, runtime,
+            solver status, and the solved model instance.
+    Raises:
+        ValueError: If the solver name is not recognized.
+    """
     optimizer = pyo.SolverFactory(solver_name)
     optimizer.options['NonConvex'] = 0
 
@@ -104,7 +129,36 @@ def solve_dca(
         output_stem: str="test",
         save_plot: bool=False
     ) -> dict[str, Any]:
+    """
+    Solve the DCA formulation using a specified solver.
 
+    Args:
+        spdca (SPDCALinearSolver): The SPDCA solver instance.
+        dca_options (dict[str, Any]): Options for the DCA solver, including:
+            - max_iters: Maximum number of iterations.
+            - conv_tol: Convergence tolerance.
+            - feas_tol: Feasibility tolerance.
+            - delta: Initial penalty parameter.
+            - delta2: Second penalty parameter.
+            - gamma0: Initial gamma value.
+            - beta: Beta parameter for the DCA algorithm.
+            - verbose: Whether to print progress.
+            - use_prox: Whether to use proximal updates.
+            - adaptive_prox: Whether to use adaptive proximal updates.
+            - accelerate: Whether to use acceleration in the DCA algorithm.
+        solver_name (str): Name of the solver to use (default: 'gurobi_persistent').
+        norm (str): Norm to use for the DCA problem (default: None, which means no norm).
+        starting_pt (pyo.ConcreteModel): Starting point for the DCA algorithm (default: None).
+        opt_cut_value (float): Optional cut value for the optimization problem (default: None).
+        output_stem (str): Stem for the output files (default: "test").
+        save_plot (bool): Whether to save a plot of the iteration log (default: False). 
+    Returns:
+        dict[str, Any]: Dictionary containing the objective value, error, runtime,
+            solver status, number of iterations, initial and final penalty parameters,
+            and the solved model instance.
+    Raises:
+        ValueError: If the solver name is not recognized.
+    """
     optimizer = pyo.SolverFactory(solver_name)
     if solver_name in ['gurobi', 'gurobi_persistent']:
         optimizer.options['NonConvex'] = 0
@@ -160,7 +214,25 @@ def solve_dca(
     }
 
 def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: list[str], outpath: str=None):
+    """
+    Solve benchmark instances using the specified methods.
 
+    Args:
+        mps_parsers (dict[str, MPS_AUX_Parser]): Dictionary mapping instance names to MPS_AUX_Parser instances.
+        methods (list[str]): List of methods to use for benchmarking. Options include:
+            - 'relaxed': Solve the relaxed formulation.
+            - 'ub': Solve the upper bound formulation.
+            - 'milp': Solve the exact MILP formulation.
+            - 'dca-linf-n': Solve DCA with linf norm, starting from zero.
+            - 'dca-linf-r': Solve DCA with linf norm, starting from relaxed solution.
+            - 'dca-linf-e': Solve DCA with linf norm, starting from 1.0.
+            - 'dca-l1-n': Solve DCA with l1 norm, starting from zero.
+            - 'dca-l1-r': Solve DCA with l1 norm, starting from relaxed solution.
+            - 'dca-l1-e': Solve DCA with l1 norm, starting from 1.0.
+        outpath (str): Path to save the benchmark results as an Excel file. If None, results are not saved. 
+    Returns:
+        dict: Dictionary containing the results for each instance and method.
+    """
 
     adaptive_prox = False
 
@@ -351,7 +423,27 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
     return result_df
 
 def batch_benchmark_from_stem(mps_stem: str, methods: list[str], outpath: str=None):
-    # for each mps/aux pair in a directory
+    """
+    Batch benchmark a single instance by its stem name.
+    Args:
+        mps_stem (str): The stem name of the MPS instance to benchmark.
+        methods (list[str]): List of methods to use for benchmarking. Options include:
+            - 'relaxed': Solve the relaxed formulation.
+            - 'ub': Solve the upper bound formulation.
+            - 'milp': Solve the exact MILP formulation.
+            - 'dca-linf-n': Solve DCA with linf norm, starting from zero.
+            - 'dca-linf-r': Solve DCA with linf norm, starting from relaxed solution.
+            - 'dca-linf-e': Solve DCA with linf norm, starting from 1.0.
+            - 'dca-l1-n': Solve DCA with l1 norm, starting from zero.
+            - 'dca-l1-r': Solve DCA with l1 norm, starting from relaxed solution.
+            - 'dca-l1-e': Solve DCA with l1 norm, starting from 1.0.
+        outpath (str): Path to save the benchmark results as an Excel file. If None, results are not saved.     
+        Returns:
+            pd.DataFrame: DataFrame containing the benchmark results for the specified instance.
+        Raises:
+            ValueError: If the MPS instance files cannot be found or if there are multiple pairs
+                of MPS/AUX files with the same stem name.
+        """
 
     files = find_files_by_stem(root_dir=bobilib_dir, stem=mps_stem)
 
@@ -377,11 +469,30 @@ def batch_benchmarks_from_dir(
         root_dirs: list[str], 
         methods: list[str], 
         recurse: bool=False, 
-        outpath: str=None,
-        sign: int=1,
-        ll_quad: bool=True
+        outpath: str=None
     ):
+    """
+    Batch benchmark instances from multiple directories.
 
+    Args:
+        root_dirs (list[str]): List of root directories to search for instances.
+        methods (list[str]): List of methods to use for benchmarking. Options include:
+            - 'relaxed': Solve the relaxed formulation.
+            - 'ub': Solve the upper bound formulation.
+            - 'milp': Solve the exact MILP formulation.
+            - 'dca-linf-n': Solve DCA with linf norm, starting from zero.
+            - 'dca-linf-r': Solve DCA with linf norm, starting from relaxed solution.
+            - 'dca-linf-e': Solve DCA with linf norm, starting from 1.0.
+            - 'dca-l1-n': Solve DCA with l1 norm, starting from zero.
+            - 'dca-l1-r': Solve DCA with l1 norm, starting from relaxed solution.
+            - 'dca-l1-e': Solve DCA with l1 norm, starting from 1.0.
+        recurse (bool): Whether to recursively search subdirectories (default: False).
+        outpath (str): Path to save the benchmark results as an Excel file. If None, results are not saved.
+    Returns:
+        pd.DataFrame: DataFrame containing the benchmark results for all instances found in the specified directories.
+    Raises:
+        NotADirectoryError: If any of the provided root directories is not a valid directory.
+    """
     parsers = {}
     for root_dir in root_dirs:
         if not os.path.isdir(root_dir):
@@ -469,25 +580,7 @@ if __name__ == "__main__":
         )
     elif args.from_list:
         to_solve = [
-            'plusBCPIns_10_7_9',
-            'plusBCPIns_10_9_6',
-            'plusBCPIns_10_7_7',
-            'plusBCPIns_10_7_8',
-            'bmilplib_460_5',
-            'plusBCPIns_10_7_2',
-            'xuLarge600-2',
-            'interKP-500-100-2-3',
-            'interKP-300-100-1-3',
-            'interKP-300-100-1-2',
-            'interKP-400-100-2-3',
-            'interKP-500-100-1-3',
-            'interKP-300-100-2-2',
-            'interKP-400-100-1-2',
-            'interKP-500-100-1-2',
-            'interKP-400-100-1-4',
-            'interKP-400-100-2-2',
-            'bmilplib_410_2',
-            'xuLarge600-1',
+            # fill in with instance stems to solve
         ]
         parsers = {}
         for mps_stem in to_solve:

@@ -30,7 +30,15 @@ class SPDCAQuadraticSolver:
     Solver for quadratic bilevel problems using the SPDCA method.
     """
     def __init__(self, instance_data, name: str = "SPDCA Quadratic", log_file: str = None, init_val: float=0.0, ll_quad: bool=True):
+        """
+        Attributes:
+            instance_data: Instance data containing problem matrices and vectors.
+            name: Name of the solver instance.
+            log_file: Path to the log file.
+            init_val: Initial value for the solver.
+            ll_quad: Boolean indicating if the lower level problem is quadratic.
 
+        """
         self.name = name
         self.data = instance_data
         self.arrays = instance_data.arrays
@@ -91,6 +99,12 @@ class SPDCAQuadraticSolver:
         )
     
     def _set_transform(self, N: np.ndarray):
+        """
+        Set the linear transformation matrix N and its inverse.
+
+        Args:
+            N (np.ndarray): 2x2 transformation matrix.
+        """
         self.N = N
         self.N_inv = np.linalg.inv(N)
         self.alpha = N[0,0] * N[1,0]
@@ -104,6 +118,15 @@ class SPDCAQuadraticSolver:
             - dual feasibility
             - upper-level objective
             - complementarity slackness (if relax=False)
+        
+        If relax=False, this method returns a MINLP model using big-M formulation.
+        If relax=True, this method returns a MLP model with continuous variables.
+
+        Args:
+            relax (bool): Whether to relax the complementarity slackness constraints.
+            milp (bool): Whether to use big-M formulation for complementarity slackness.
+            obj_sense: Objective sense (pyo.minimize or pyo.maximize).
+
         """
 
         self.reduce_vars = False
@@ -133,6 +156,20 @@ class SPDCAQuadraticSolver:
             reduce_vars: bool=True, 
             opt_cut_value: float=None
         ) -> pyo.ConcreteModel:
+        """
+        Create SPDCA convex subproblem.
+
+        Args:
+            N (np.ndarray): 2x2 transformation matrix.
+            norm (str): Norm type for penalty function ('l1', 'linfty', 'l2', or None).
+            starting_pt (pyo.ConcreteModel): Starting point for DCA.
+            reduce_vars (bool): Whether to use variable reduction.
+            opt_cut_value (float): Optimality cut value.
+        
+        Returns:
+            pyo.ConcreteModel: The constructed SPDCA model instance.
+        
+        """
 
         if N is not None:
             self._set_transform(N)
@@ -179,7 +216,15 @@ class SPDCAQuadraticSolver:
         return model
 
     def _calcuate_Q_mat_offsets(self) -> None:
-        
+        """
+        Calculates the offset rho_x and rho_y to make the Hessian matrices positive semi-definite.
+
+        This method computes the smallest eigenvalue of the upper-level Hessian matrix Qux and the 
+        lower-level Hessian matrix Quy. If the smallest eigenvalue is negative, it sets the 
+        corresponding offset (rho_x or rho_y) to the absolute value of that eigenvalue.
+        And stores a positive semi-definite version of the Hessian matrices by adding 
+        the offset times the identity matrix to use in the DC decomposition of the objective function.
+        """
         # Upper-level Hessian Qux
         lam_min = sp.linalg.eigsh(self.Qux, k=1, which="SA", return_eigenvectors=False)[0]
         if lam_min < 0: 
@@ -226,6 +271,9 @@ class SPDCAQuadraticSolver:
        
 
     def _Q_matrix_check(self):
+        """
+        Checks if the Q matrices are positive semi-definite and symmetric.
+        """
 
         assert is_positive_semidefinite(self.Qly), "Qly matrix is not positive semi-definite"
 
@@ -249,7 +297,6 @@ class SPDCAQuadraticSolver:
     def _augment_ll_matrix_data(self):
         """
         Augments lower level constraint matrices to incorporate bounds.
-        This is not strictly necessary, but helps formulate lower level KKT conditions
         """
 
 
@@ -262,19 +309,23 @@ class SPDCAQuadraticSolver:
             self.C = np.vstack([self.C, np.zeros((self.follower_bd_mat.shape[0], self.data.nr_ul_vars))])
 
             self.data.nr_ll_constrs += self.follower_bd_mat.shape[0]
-        
-
-
-    # def _add_dca_components(self, model, reduce_vars:bool=True):
-
-    #     model = self._initialize_dca_variables(model)
-    #     model = self._initialize_dca_parameters(model)
-    #     model = self._initialize_dca_constraints(model,reduce_vars=reduce_vars)
-
-    #     return model
 
     
     def _initialize_dca_parameters(self, model):
+        """
+        Initializes the following DCA parameters in the model:
+            - uk: DCA parameter for u variable.
+            - vk: DCA parameter for v variable.
+            - xk: DCA parameter for x variable.
+            - yk: DCA parameter for y variable.
+            - gk: penalty parameter.
+            - tau_k: proximal parameter.
+
+        Args:
+            model: Pyomo model instance.
+        Returns:
+            model: Pyomo model instance with DCA parameters.
+        """
 
         model.uk = pyo.Param(
             range(self.data.nr_ll_constrs),
@@ -313,7 +364,18 @@ class SPDCAQuadraticSolver:
         return model
 
     def _initialize_nonconvex_constraints(self, model, milp: bool=False):
+        """
+        Creates the complementarity slackness constraints.
 
+        If milp=True, uses big-M formulation with binary variables.
+        If milp=False, uses bilinear equality constraints.
+
+        Args:
+            model: Pyomo model instance.
+            milp (bool): Whether to use big-M formulation.
+        Returns:
+            model: Pyomo model instance with complementarity slackness constraints.
+        """
         if milp:
             
             def _big_M_ll_aux(m, i):
@@ -346,7 +408,18 @@ class SPDCAQuadraticSolver:
    
     
     def _set_dca_starting_point(self, model: pyo.ConcreteModel, presolve_model: pyo.ConcreteModel) -> pyo.ConcreteModel:
-        
+        """
+        Sets the starting point for the DCA model based on a presolve model.
+
+        NOTE: This method assumes that the presolve model contains variables
+        with the same names as those in the DCA model.
+
+        Args:
+            model (pyo.ConcreteModel): DCA model instance.
+            presolve_model (pyo.ConcreteModel): Presolve model instance.
+        Returns:
+            pyo.ConcreteModel: DCA model instance with updated starting point.
+        """
         var_names = ['x', 'y', 'lam', 'll_aux']
         for var_name in var_names:
             if hasattr(model, var_name) and hasattr(presolve_model, var_name):
@@ -375,6 +448,20 @@ class SPDCAQuadraticSolver:
 
 
     def _initialize_bilevel_variables(self, model, milp: bool=False):
+        """
+        Initializes the bilevel variables in the model:
+            - x: upper level primal variables.
+            - y: lower level primal variables.
+            - lam: lower level dual variables (if not reducing vars).
+            - ll_aux: lower level auxiliary variables (if not reducing vars).
+            - z: binary variables for big-M formulation (if milp=True).
+
+        Args:
+            model: Pyomo model instance.
+            milp (bool): Whether to use big-M formulation.
+        Returns:
+            model: Pyomo model instance with initialized variables.
+        """
 
         # upper level primal vars
         model.x = pyo.Var(
@@ -402,7 +489,7 @@ class SPDCAQuadraticSolver:
                 initialize=self.init_val
             )
 
-            # lower leve auxiliary variables (ll_aux = C * x + D * y - b)
+            # lower level auxiliary variables (ll_aux = C * x + D * y - b)
             model.ll_aux = pyo.Var(
                 range(self.data.nr_ll_constrs),
                 domain=pyo.Reals,
@@ -422,7 +509,19 @@ class SPDCAQuadraticSolver:
         return model 
 
     def _initialize_bilevel_constraints(self, model):
+        """
+        Initializes the bilevel constraints in the model:
+            - upper level feasibility constraints.
+            - lower level feasibility constraints.
+            - lower level stationarity constraints.
+            - lower level auxiliary variable definition.
+        
+        Args:
+            model: Pyomo model instance.   
 
+        Returns:
+            model: Pyomo model instance with initialized constraints.
+        """
         # upper level feasibility constraints
         def _upper_level_constraint_rule(m, i):
             ul_var_expr = sum(m.x[j] * self.A[i, j] for j in range(self.data.nr_ul_vars))
@@ -460,8 +559,6 @@ class SPDCAQuadraticSolver:
                 )
             else:
                 Qy = 0
-            #TODO: use sparse mat-mul here
-            
             if self.reduce_vars:
                 # Qy = sum(data[k] * model.y[cols[k]] for k in range(len(data)))
                 return sum(
@@ -499,6 +596,20 @@ class SPDCAQuadraticSolver:
         return model
     
     def _initialize_dca_variables(self, model):
+        """
+        Initializes the DCA auxiliary variables in the model:
+
+            - u: DCA auxiliary variable u.
+            - v: DCA auxiliary variable v.
+            - w: l1 norm auxiliary variable (if norm='l1').
+            - slack: linfty norm auxiliary variable (if norm='linfty').
+
+        Args:
+            model: Pyomo model instance.
+
+        Returns:
+            model: Pyomo model instance with initialized DCA variables.
+        """
         # TODO: These init values should be a function of initial values of lam, ll_aux
         # dca auxiliary variables
         model.u = pyo.Var(
@@ -528,6 +639,15 @@ class SPDCAQuadraticSolver:
         return model 
     
     def _initialize_dca_constraints(self, model, opt_cut_value: float=None):
+        """
+        Initializes the DCA constraints in the model based on the selected norm type.
+
+        Args:
+            model: Pyomo model instance.
+            opt_cut_value (float): Optimality cut value.
+        Returns:
+            model: Pyomo model instance with initialized DCA constraints.
+        """
 
 
         if self.norm == 'l1':
@@ -615,23 +735,45 @@ class SPDCAQuadraticSolver:
 
     
     def dca_obj(self, model: pyo.ConcreteModel) -> pyo.Expression:
+        """
+        SPDCA subproblem objective function. This function is a linear
+        approximation of F = G - H at the current DCA parameters.
+        """
         return self.g(model) - self.h_linear_approx(model) +  model.gk * (self.phi(model) - self.psi_linear_approx(model))
 
     def grad_F(self, x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+        """
+        Implements the gradient of the SPDCA objective function F = f + gk (theta).
+
+        Args:
+            x (np.ndarray): Upper level primal variables.
+            y (np.ndarray): Lower level primal variables.
+            u (np.ndarray): DCA auxiliary variable u.
+            v (np.ndarray): DCA auxiliary variable v.
+        Returns:
+            np.ndarray: Gradient of the SPDCA objective function.
+        """
         return (np.hstack([self.grad_f(x, y), np.zeros(u.shape[0] + v.shape[0])]) +
                 np.hstack([np.zeros(x.shape[0] + y.shape[0]), self.gk * self.grad_theta(u, v)]))
     
 
     def f(self, model: pyo.ConcreteModel):
-        """upper level objective function"""
+        """
+        DC decomposition of upper level objective function f = g - h.
+        """
         return self.g(model) - self.h(model)
         # return 0
     
     def grad_f(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Gradient of upper level objective function f = g - h.
+        """
         return self.grad_g(x, y) - self.grad_h(x, y)
     
     def g(self, model: pyo.ConcreteModel):
-        """convex part of upper level objective function"""
+        """
+        Convex quadratic part of upper level objective function g.
+        """
         linear_expr = sum(self.c_u[i] * model.x[i] for i in range(self.data.nr_ul_vars)) + \
                         sum(self.d_u[i] * model.y[i] for i in range(self.data.nr_ll_vars))
         rows, cols = self.Qux_psd.nonzero()
@@ -647,13 +789,24 @@ class SPDCAQuadraticSolver:
         return (quad_expr / 2) + linear_expr
     
     def grad_g(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Gradient of convex quadratic part of upper level objective function g.
+
+        Args:
+            x (np.ndarray): Upper level primal variables.
+            y (np.ndarray): Lower level primal variables.
+        Returns:
+            np.ndarray: Gradient of g at (x, y).
+        """
         return np.hstack([
             self.Qux @ x + self.c_u,
             self.Quy @ y + self.d_u
         ])
     
     def h(self, model: pyo.ConcreteModel):
-        """concave part of upper level objective function"""
+        """
+        Concave part of upper level objective function h.
+        """
         if self.rho_x != 0:
             ul_expr = self.rho_y * sum(model.x[i] ** 2 for i in range(self.data.nr_ul_vars))
         else:
@@ -667,10 +820,21 @@ class SPDCAQuadraticSolver:
 
 
     def grad_h(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Gradient of concave part of upper level objective function h.
+        Args:
+            x (np.ndarray): Upper level primal variables.
+            y (np.ndarray): Lower level primal variables.
+        Returns:
+            np.ndarray: Gradient of h at (x, y).
+        """
+        
         return np.hstack([self.rho_x * x, self.rho_y * y])
 
     def phi(self, model: pyo.ConcreteModel):
-        """convex part of l1 penalty function"""
+        """
+        Convex part of penalty function phi.
+        """
         if self.norm is None:
             return sum(self.alpha * model.u[i]**2 for i in range(self.data.nr_ll_constrs))
         elif self.norm == 'linfty':
@@ -684,6 +848,9 @@ class SPDCAQuadraticSolver:
             )
 
     def grad_phi(self, u: np.ndarray, v: np.ndarray):
+        """
+        Gradient of convex part of penalty function phi.
+        """
         if self.norm is None:
             return np.hstack([[2 * self.alpha * u[i] for i in range(u.shape[0])],
                               np.zeros(v.shape[0])])
@@ -696,7 +863,9 @@ class SPDCAQuadraticSolver:
             raise ValueError(f"Nonsmooth gradients not supported get!")
         
     def psi(self, model):
-        """concave part of l1 penalty function"""
+        """
+        Concave part of penalty function psi.
+        """
         if self.norm is None:
             return sum(self.beta * model.v[i]**2 for i in range(self.data.nr_ll_constrs))
         elif self.norm == 'linfty':
@@ -707,6 +876,9 @@ class SPDCAQuadraticSolver:
             return sum( (self.alpha * model.u[i]**2 + self.beta * model.v[i]**2)**2 for i in range(self.data.nr_ll_constrs))
 
     def grad_psi(self, u: np.ndarray, v: np.ndarray):
+        """
+        Gradient of concave part of penalty function psi.
+        """
         if self.norm is None:
             return np.hstack([np.zeros(u.shape[0]),
                               [2 * self.beta * u[i] for i in range(v.shape[0])]])
@@ -726,6 +898,10 @@ class SPDCAQuadraticSolver:
             raise ValueError(f"Nonsmooth gradients not supported get!")
         
     def psi_linear_approx(self, model: pyo.ConcreteModel): 
+        """
+        Linear approximation using the Taylor expansion of the concave part 
+        of the penalty function psi at the current DCA parameters.
+        """
         if self.norm == 'linfty':
             return 0
         u_expr = sum(
@@ -749,6 +925,10 @@ class SPDCAQuadraticSolver:
             )
 
     def h_linear_approx(self, model: pyo.ConcreteModel):
+        """
+        Linear approximation using the Taylor expansion of the concave part
+        of the upper level objective function h at the current DCA parameters.
+        """
         x_expr = self.rho_x * sum(
             model.xk[i] * (model.x[i] - model.xk[i])
             for i in model.x.index_set()
@@ -760,17 +940,28 @@ class SPDCAQuadraticSolver:
         return x_expr + y_expr
     
     def H_linear_approx(self, model: pyo.ConcreteModel):
+        """
+        Linear approximation of H = h + psi at the current DCA parameters.
+        """
         return self.psi_linear_approx(self, model) + self.h_linear_approx(model)
     
     def G(self, model: pyo.ConcreteModel):
+        """
+        Convex part of main DCA objective function G = g + phi.
+        """
         return self.g(model) + self.phi(model)
     
     def theta(self, model):
-        """penalty function as function of u, v"""
+        """
+        Penalty function as function of u, v
+        """
         
         return self.phi(model) - self.psi(model)
     
     def grad_theta(self, u: np.ndarray, v:np.ndarray) -> np.ndarray:
+        """
+        Gradient of penalty function theta = phi - psi.
+        """
         return self.grad_phi(u, v) - self.grad_psi(u, v)
     
     def penalty(self, model):
@@ -785,11 +976,17 @@ class SPDCAQuadraticSolver:
             ord=1
         )
 
-    def _prox_term_old(self, z: list[pyo.Var], zk: np.ndarray, Bk: np.ndarray) -> pyo.Expression:
-        z_diff = [z[i] - zk[i] for i in range(len(z))]
-        return sum(Bk[i, j] * z_diff[i] * z_diff[j] for i in range(len(z)) for j in range(len(z)))
 
     def _prox_term(self, model: pyo.ConcreteModel) -> pyo.Expression:
+        """
+        Proximal term for the SPDCA subproblem || z - z_k ||^2.
+
+        Args:
+            model (pyo.ConcreteModel): Pyomo model instance.
+
+        Returns:
+            pyo.Expression: Proximal term expression.
+        """
         prox = sum(
             (model.u[i] - model.uk[i])**2 + (model.v[i] - model.vk[i])**2
                 for i in model.u.index_set()
@@ -802,37 +999,36 @@ class SPDCAQuadraticSolver:
         )
         
         return prox
-
-
-    def _update_prox_matrix(self, model: pyo.ConcreteModel, Bk: np.ndarray, check_psd: bool=False) -> np.ndarray:
-        """
-        Updates the prox matrix Bk based on the current solution.
-        """
-
-        # update rule here
-
-        if check_psd:
-            
-            if is_positive_definite(Bk):
-                return Bk
-            else:
-                raise ValueError("Prox matrix is not positive definite.")
-        else:
-            
-            return Bk   
+ 
         
     def _update_prox_term(self, model: pyo.ConcreteModel, beta: float=1) -> float:
-        
+        """
+        Updates proximal parameter tau_k based on the current iteration.
+
+        Args:
+            model (pyo.ConcreteModel): Pyomo model instance.
+            beta (float): Proximal update factor.
+        Returns:
+            float: Updated proximal parameter tau_k.
+        """
         return max(model.tau_k.value * beta, self.tau_min)
     
     def _update_penalty(self, model: pyo.ConcreteModel, delta: float, delta2: float, z_diff: np.ndarray, tol: float=1e-6) -> float:
-
         """
         Updates the penalty parameter gk based on the current iteration.
+
+        Args:
+            model (pyo.ConcreteModel): Pyomo model instance.
+            delta (float): Multiplicative penalty decrease factor.
+            delta2 (float): Penalty increase threshold.
+            z_diff (np.ndarray): Difference between current and previous iteration variables.
+            tol (float): Feasibility tolerance.
+
+        Returns:
+            float: Updated penalty parameter gk.
         """
         
         if z_diff * model.gk.value < delta2 and np.abs(pyo.value(self.theta(model))) > tol:
-        # if z_diff * model.gk.value < 1: 
             if self.gk > GAMMA_MAX:
                 return self.gk
             else:
@@ -842,7 +1038,21 @@ class SPDCAQuadraticSolver:
             return self.gk
     
     def _fix_variables(self, model: pyo.ConcreteModel, optimizer: Any=None, tol: float=1e-6) -> float:
-        # this really doesn't work lol
+        """
+        Fixes variables u, v (and lam, ll_aux if not reducing vars)
+        that satisfy the complementarity slackness condition
+        within a given tolerance. This only applies when options.accelerate=True.
+
+        NOTE: This is experimental and does not improve performance in most cases.
+
+        Args:
+            model (pyo.ConcreteModel): Pyomo model instance.
+            optimizer (Any): Optimizer instance (if persistent).
+            tol (float): Tolerance for complementarity condition.
+        Returns:
+            float: Number of variables fixed.
+
+        """
 
         num_fixed = 0
         for i in model.u.index_set():
@@ -863,7 +1073,15 @@ class SPDCAQuadraticSolver:
         # print(f'Fixed {num_fixed} aux vars')
     
     def set_default_params(self, **input_options) -> SimpleNamespace:
+        """
+        Sets default parameters for the SPDCA solver.
 
+        Args:
+            input_options: Input options to override default parameters.
+        
+        Returns:
+            SimpleNamespace: Options namespace with default parameters set.
+        """
         options = {}
 
         for param, value in DEFAULT_OPTIONS.items():
@@ -875,8 +1093,6 @@ class SPDCAQuadraticSolver:
             options['gamma0'] = 1e-4
 
         self.gk = options['gamma0']
-
-        
     
         self.options = SimpleNamespace(**options)
 
@@ -888,7 +1104,14 @@ class SPDCAQuadraticSolver:
             **input_options
         ) -> pyo.ConcreteModel:
         """
-        Solves the DCA subproblem.
+        Main solve method for the SPDCA algorithm.
+
+        Args:
+            instance (pyo.ConcreteModel): Pyomo model instance.
+            optimizer (Any): Optimizer instance.
+            input_options: Input options to override default parameters.
+        Returns:
+            pyo.ConcreteModel: Solved Pyomo model instance.
         """
 
         options = self.set_default_params(**input_options)
