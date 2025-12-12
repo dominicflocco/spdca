@@ -1,5 +1,4 @@
 
-import numpy as np
 """Utility functions for SPDCA optimization workflows.
 This module provides helpers for:
 - File discovery by stem name.
@@ -16,23 +15,7 @@ The utilities support workflows around bilevel optimization and DC algorithms,
 particularly with Pyomo models and Gurobi solver integration.
 """
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+import numpy as np
 import pandas as pd
 import pyomo.environ as pyo
 from typing import Any, Callable
