@@ -8,7 +8,7 @@ from utils.utils import *
 
 DEFAULT_OPTIONS = {
     "verbose": False, 
-    "conv_tol": 1e-4,
+    "conv_tol": 1e-6,
     "feas_tol": 1e-6,
     "gamma0": 1,
     "delta": 1,
@@ -232,6 +232,7 @@ class SPDCAQuadraticSolver:
         else:
             self.rho_x = 0 
         self.Qux_psd = self.Qux + self.rho_x * sp.eye(self.Qux.shape[0])
+
         # Lower-level Hessian Quy
         lam_min = sp.linalg.eigsh(self.Quy, k=1, which="SA", return_eigenvectors=False)[0]
         if lam_min < 0:
@@ -549,9 +550,7 @@ class SPDCAQuadraticSolver:
         
         # lower level stationarity constraints
         def _lower_level_stationarity(m, j):
-            #j is row!
-            # rows, cols = self.Qly.nonzero()
-            # data = self.Qux.data
+
             if self.ll_quad:
                 Qy = sum(
                     self.Qly[j, i] * m.y[i]
@@ -560,7 +559,6 @@ class SPDCAQuadraticSolver:
             else:
                 Qy = 0
             if self.reduce_vars:
-                # Qy = sum(data[k] * model.y[cols[k]] for k in range(len(data)))
                 return sum(
                         self.D[i, j] * (self.N[0,0] * m.u[i] + self.N[0,1] * m.v[i])
                         for i in range(self.data.nr_ll_constrs)
@@ -610,8 +608,6 @@ class SPDCAQuadraticSolver:
         Returns:
             model: Pyomo model instance with initialized DCA variables.
         """
-        # TODO: These init values should be a function of initial values of lam, ll_aux
-        # dca auxiliary variables
         model.u = pyo.Var(
             range(self.data.nr_ll_constrs),
             domain=pyo.Reals,
@@ -774,8 +770,10 @@ class SPDCAQuadraticSolver:
         """
         Convex quadratic part of upper level objective function g.
         """
-        linear_expr = sum(self.c_u[i] * model.x[i] for i in range(self.data.nr_ul_vars)) + \
-                        sum(self.d_u[i] * model.y[i] for i in range(self.data.nr_ll_vars))
+        linear_expr = (
+            sum(self.c_u[i] * model.x[i] for i in range(self.data.nr_ul_vars)) 
+            + sum(self.d_u[i] * model.y[i] for i in range(self.data.nr_ll_vars))
+        )
         rows, cols = self.Qux_psd.nonzero()
         quad_expr = sum(
             (self.Qux_psd.data[k] ) * model.x[rows[k]] * model.x[cols[k]]
@@ -844,7 +842,7 @@ class SPDCAQuadraticSolver:
         elif self.norm == 'l2':
             return 2 * sum(
                 self.alpha**2 * model.u[i]**4 + self.beta**2 * model.v[i]**4 
-                    for i in range(self.data.nr_ll_constrs)
+                for i in range(self.data.nr_ll_constrs)
             )
 
     def grad_phi(self, u: np.ndarray, v: np.ndarray):
@@ -857,8 +855,10 @@ class SPDCAQuadraticSolver:
         elif self.norm == 'linfty':
             return np.zeros(v.shape[0] + u.shape[0])
         elif self.norm == 'l2':
-            return np.hstack([[8 * self.alpha**2 * u[i]**3 for i in range(u.shape[0])],
-                              [8 * self.beta**2 * v[i]**3 for i in range(v.shape[0])]])
+            return np.hstack([
+                [8 * self.alpha**2 * u[i]**3 for i in range(u.shape[0])],
+                [8 * self.beta**2 * v[i]**3 for i in range(v.shape[0])]
+            ])
         else:
             raise ValueError(f"Nonsmooth gradients not supported get!")
         
@@ -867,21 +867,35 @@ class SPDCAQuadraticSolver:
         Concave part of penalty function psi.
         """
         if self.norm is None:
-            return sum(self.beta * model.v[i]**2 for i in range(self.data.nr_ll_constrs))
+            return sum(
+                self.beta * model.v[i]**2 
+                for i in range(self.data.nr_ll_constrs)
+            )
         elif self.norm == 'linfty':
             return 0
         elif self.norm == 'l1':
-            return sum(self.alpha * model.u[i]**2 + self.beta * model.v[i]**2 for i in range(self.data.nr_ll_constrs))    
+            return sum(
+                self.alpha * model.u[i]**2 + self.beta * model.v[i]**2 
+                for i in range(self.data.nr_ll_constrs)
+            )    
         elif self.norm == 'l2':
-            return sum( (self.alpha * model.u[i]**2 + self.beta * model.v[i]**2)**2 for i in range(self.data.nr_ll_constrs))
+            return sum(
+                (self.alpha * model.u[i]**2 + self.beta * model.v[i]**2)**2 
+                for i in range(self.data.nr_ll_constrs)
+            )
 
     def grad_psi(self, u: np.ndarray, v: np.ndarray):
         """
         Gradient of concave part of penalty function psi.
         """
         if self.norm is None:
-            return np.hstack([np.zeros(u.shape[0]),
-                              [2 * self.beta * u[i] for i in range(v.shape[0])]])
+            return np.hstack([
+                np.zeros(u.shape[0]),
+                [
+                    2 * self.beta * v[i] 
+                    for i in range(v.shape[0])
+                ]
+            ])
         elif self.norm == 'linfty':
             return np.zeros(v.shape[0] + u.shape[0])
         elif self.norm == 'l2':
@@ -989,13 +1003,15 @@ class SPDCAQuadraticSolver:
         """
         prox = sum(
             (model.u[i] - model.uk[i])**2 + (model.v[i] - model.vk[i])**2
-                for i in model.u.index_set()
+            for i in model.u.index_set()
         )
         prox += sum(
-            (model.x[i] - model.xk[i]) for i in model.x.index_set()
+            (model.x[i] - model.xk[i]) 
+            for i in model.x.index_set()
         )
         prox += sum(
-            (model.y[i] - model.yk[i]) for i in model.y.index_set()
+            (model.y[i] - model.yk[i]) 
+            for i in model.y.index_set()
         )
         
         return prox
@@ -1070,7 +1086,7 @@ class SPDCAQuadraticSolver:
                     if optimizer is not None:
                         optimizer.update_var(model.lam[i])
                         optimizer.update_var(model.ll_aux[i])
-        # print(f'Fixed {num_fixed} aux vars')
+        
     
     def set_default_params(self, **input_options) -> SimpleNamespace:
         """
@@ -1120,8 +1136,7 @@ class SPDCAQuadraticSolver:
             estimate_lipschitz_quadratic(self.Qux),
             estimate_lipschitz_quadratic(self.Quy)
         )
-        
-       
+    
         instance.gk.value = self.gk
         if self.L < 1e-4: self.L = 1 
         if options.use_prox:
@@ -1155,14 +1170,14 @@ class SPDCAQuadraticSolver:
         z_diff = -1
         k = 0
         while True: 
-            logging.info(f"\n----------- SPDCA Iteration {k} -----------\n")
+            # logging.info(f"\n----------- SPDCA Iteration {k} -----------\n")
             
             # solve subproblem
             solve_st = time.time()
             res = solve_subproblem(
                 subproblem_model=instance, 
                 optimizer=optimizer,
-                verbose=True
+                verbose=options.verbose
             )
             solve_time += time.time() - solve_st
 

@@ -442,7 +442,7 @@ class SPDCALinearSolver:
                 initialize=self.init_val
             )
 
-            # lower leve auxiliary variables (ll_aux = C * x + D * y - b)
+            # lower level auxiliary variables (ll_aux = C * x + D * y - b)
             model.ll_aux = pyo.Var(
                 range(self.data.nr_ll_constrs),
                 domain=pyo.Reals,
@@ -794,8 +794,13 @@ class SPDCALinearSolver:
         Gradient of concave part of penalty function psi.
         """
         if self.norm is None:
-            return np.hstack([np.zeros(u.shape[0]),
-                              [2 * self.beta * u[i] for i in range(v.shape[0])]])
+            return np.hstack([
+                np.zeros(u.shape[0]),
+                [
+                    2 * self.beta * v[i] 
+                    for i in range(v.shape[0])
+                ]
+            ])
         elif self.norm == 'linfty':
             return np.zeros(v.shape[0] + u.shape[0])
         elif self.norm == 'l2':
@@ -918,8 +923,6 @@ class SPDCALinearSolver:
             float: Updated proximal parameter tau_k.
         """
 
-        # update rule here
-
         if check_psd:
             
             if is_positive_definite(Bk):
@@ -930,7 +933,7 @@ class SPDCALinearSolver:
             
             return Bk   
         
-    # def _update_prox_term(self, model: pyo.ConcreteModel, z_diff: np.ndarray, tol: float=1e-6) -> float:
+    
     def _update_prox_term(self, model: pyo.ConcreteModel, beta: float=1) -> float:
         """
         Updates proximal parameter tau_k based on the current iteration.
@@ -1002,7 +1005,7 @@ class SPDCALinearSolver:
                     if optimizer is not None:
                         optimizer.update_var(model.lam[i])
                         optimizer.update_var(model.ll_aux[i])
-        # print(f'Fixed {num_fixed} aux vars')
+        
     
     def set_default_params(self, **input_options) -> SimpleNamespace:
         """
@@ -1048,19 +1051,17 @@ class SPDCALinearSolver:
 
         options = self.set_default_params(**input_options)
         
-        # self.L = estimate_lipschitz(self.grad_F, values(instance.x), values(instance.y), values(instance.u), values(instance.v), use_st_pt=False)
+        
         self.L = 2 * self.gk
        
         instance.gk.value = self.gk
-        # self.options.delta2 = self.gk
+        
         if self.L < 1e-4: self.L = 1 
+
         if options.use_prox:
             instance.tau_k.value = np.abs(self.L)
         else:
             instance.tau_k.value = 0
-        # options.prox_param = 0.001
-
-        
         
         zk = hstack_var_values(instance.x, instance.y, instance.u, instance.v)
 
@@ -1099,7 +1100,7 @@ class SPDCALinearSolver:
                 optimizer.load_vars()
 
             zkp1 = hstack_var_values(instance.x, instance.y, instance.u, instance.v)
-            # what if z_diff is just uk and vk?, clearly this is the issue!
+            
             z_diff = np.linalg.norm(zkp1 - zk, ord=1)
 
             conv_check = (z_diff < self.options.conv_tol)
@@ -1115,13 +1116,8 @@ class SPDCALinearSolver:
             # penalty update 
             instance.gk.set_value(self._update_penalty(instance, self.options.delta, self.options.delta2, z_diff, self.options.feas_tol))
             
-            # prod update
-            # if options.adaptive_prox:
+            # prox update
             instance.tau_k.set_value(self._update_prox_term(instance, options.beta))
-
-
-            # update prox matrix
-            # Bk = self._update_prox_matrix(instance, Bk, check_psd=True, adaptive_lipschitz=options.adaptive_prox)
 
             # update DCA approximation
             set_values(instance.uk, instance.u)

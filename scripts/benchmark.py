@@ -443,7 +443,7 @@ def batch_benchmark_from_stem(mps_stem: str, methods: list[str], outpath: str=No
         Raises:
             ValueError: If the MPS instance files cannot be found or if there are multiple pairs
                 of MPS/AUX files with the same stem name.
-        """
+    """
 
     files = find_files_by_stem(root_dir=bobilib_dir, stem=mps_stem)
 

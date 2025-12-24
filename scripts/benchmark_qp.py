@@ -193,28 +193,41 @@ def solve_dca(
 
     obj_val = pyo.value(spdca.f(instance))
     error = pyo.value(spdca.theta(instance))
-
-    rt = iter_df['runtime'].iloc[-1]
-
-    status_str = iter_df['status_str'].iloc[-1]
-    iters = len(iter_df)
-    if iters == dca_options['max_iters']:
-        status_str = 'max_iters'
-    elif rt >= dca_options.get('time_limit', 1800):
-        status_str = 'time_limit'
-    else:
-        status_str = 'converged'
-
-    return {
-        'obj_val': obj_val,
-        'error': error,
-        'runtime': rt,
-        'status': status_str,
+    
+    if iter_df.empty:
+        return {
+        'obj_val': -1,
+        'error':  -1,
+        'runtime': -1,
+        'status': 'error',
         'iters': len(iter_df),
-        'gamma_init': iter_df.loc[0, 'penalty_param'],
-        'gamma_final': iter_df.loc[len(iter_df)-1, 'penalty_param'],
+        'gamma_init': -1,
+        'gamma_final': -1,
         'solved_model': instance
     }
+    else:
+        rt = iter_df['runtime'].iloc[-1]
+        
+
+        status_str = iter_df['status_str'].iloc[-1]
+        iters = len(iter_df)
+        if iters == dca_options['max_iters']:
+            status_str = 'max_iters'
+        elif rt >= dca_options.get('time_limit', 1800):
+            status_str = 'time_limit'
+        else:
+            status_str = 'converged'
+
+        return {
+            'obj_val': obj_val,
+            'error': error,
+            'runtime': rt,
+            'status': status_str,
+            'iters': len(iter_df),
+            'gamma_init': iter_df.loc[0, 'penalty_param'],
+            'gamma_final': iter_df.loc[len(iter_df)-1, 'penalty_param'],
+            'solved_model': instance
+        }
 
 def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: list[str], outpath: str=None, ll_quad: bool=True):
     """
@@ -286,7 +299,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 starting_pt=0.0,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 1,
@@ -310,7 +323,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 # starting_pt=None,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 1,
@@ -334,7 +347,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 # starting_pt=None,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 1,
@@ -358,7 +371,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 starting_pt=0.0,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 10,
@@ -383,7 +396,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 # starting_pt=None,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 1,
@@ -408,7 +421,7 @@ def solve_benchmark_instances(mps_parsers: dict[str,MPS_AUX_Parser], methods: li
                 # starting_pt=None,
                 dca_options = {
                     "max_iters": 1000,
-                    "conv_tol": 1e-4,
+                    "conv_tol": 1e-6,
                     "feas_tol": 1e-6,
                     "delta": 10, 
                     "delta2": 1,
@@ -540,7 +553,7 @@ def batch_benchmarks_from_dir(
     
     baseline_results = pd.read_excel(baseline_file,index_col=[0,1])
     qp_name = Path(outpath).parent.name if outpath else None
-    # prev_results_file = os.path.join(Path(outpath).parent, f"{qp_name}-hard.xlsx") if outpath else None
+    # prev_results_file = os.path.join(Path(outpath).parent, f"{qp_name}_new.xlsx") if outpath else None
     prev_results_file = None
     if prev_results_file is None or not os.path.isfile(prev_results_file):
         prev_results = pd.DataFrame()
