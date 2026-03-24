@@ -1,6 +1,8 @@
 # Successive Proximal DCA (SPDCA) for Bilevel Optimization Problems
 This repository contains the implementation of a successive proximal difference-of-convex function algorithm (SPDCA) for solving mathematical programs with complementarity constraints. The code in this repository supports ongoing research.
 
+Preprint: https://optimization-online.org/?p=33921
+
 
 
 ## Getting Started
